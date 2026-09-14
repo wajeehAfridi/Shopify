@@ -141,3 +141,65 @@ Note: the first attempt failed with "Country: 'Ireland' must have at least one p
 | Custom location group | gid://shopify/DeliveryLocationGroup/147117277448 |
 | Custom Germany zone | gid://shopify/DeliveryZone/699908849928 |
 | Location | gid://shopify/Location/115821052168 (Sontraer Straße 16) |
+
+---
+
+# Correction (2026-09-14, later the same day)
+
+## Clarified rule from the store owner
+
+1. Express (€69.90) must be available for **all normal products**, at any weight.
+2. Diamond and Diverso products get Express only when the order weighs **strictly less than 30 kg**. 29.9 kg → Express; 30.0 kg or more → no Express.
+3. Everything else unchanged.
+
+The earlier interpretation (Express only for Diamond/Diverso, and ≤ 30 kg inclusive) was wrong on both points.
+
+## Changes applied
+
+| Profile | Zone | Change | ID |
+|---|---|---|---|
+| General | Deutschland | Re-created **Express**, €69.90, no conditions | `DeliveryMethodDefinition/1430498705672` |
+| Custom | Germany ("Europe") | Express upper weight condition changed **30 kg → 29.999 kg** | condition `DeliveryCondition/460235702536?operator=less_than_or_equal_to` |
+
+Why 29.999 kg: the Admin API's `DeliveryConditionOperator` enum only has `GREATER_THAN_OR_EQUAL_TO` and `LESS_THAN_OR_EQUAL_TO`; there is no strict less-than. Shopify stores variant weights in grams, so 29.999 kg is one gram below the limit and no order weight can fall between 29.999 and 30.0 kg. Unit stays `KILOGRAMS`; the API stored the value as 29.999 without rounding.
+
+Nothing else was touched: free shipping ≥ €500, Standard €49, EU €149, product assignments and all other zones are unchanged. Re-read of both profiles and direct `deliveryProfile` reads on 8 sample Diamond/Diverso variants confirm this.
+
+## Final shipping rules
+
+### General profile (all non-Diamond/Diverso products)
+
+| Zone | Rate | Price | Condition |
+|---|---|---|---|
+| Deutschland | Kostenloser Versand | €0 | order ≥ €500 |
+| Deutschland | Standard | €49 | order €0 – €499 |
+| Deutschland | Express | €69.90 | none |
+| EU (26 countries) | Standard International | €149 | none |
+| International (14 countries) | Standard International | €149 | none |
+
+### Diamond & Diverso Express Profile
+
+| Zone | Rate | Price | Condition |
+|---|---|---|---|
+| Germany | Kostenloser Versand | €0 | order ≥ €500 |
+| Germany | Standard | €49 | order €0 – €499.99 |
+| Germany | Express | €69.90 | weight 0 – 29.999 kg |
+| EU (26 countries) | Standard International | €149 | none |
+
+## Expected checkout behaviour (derived from the stored rules; no live checkout was run)
+
+| Case | Express? |
+|---|---|
+| Normal product, 10 kg | yes |
+| Normal product, 40 kg | yes |
+| Diamond, 20 kg | yes |
+| Diamond, 29.9 kg | yes |
+| Diamond, exactly 30 kg | no |
+| Diamond, above 30 kg | no |
+| Diverso, below 30 kg | yes |
+| Diverso, 30 kg or above | no |
+
+## Still open (not changed, awaiting decision)
+
+- **International zone missing from the custom profile.** Before the products were moved, Diamond/Diverso shipped to the General profile's International zone (Switzerland, UK, USA, Norway, Australia, Canada, Japan, South Korea, Singapore, Hong Kong, Malaysia, New Zealand, Israel, UAE) at €149. The custom profile has no International zone, so those products currently cannot ship to these 14 countries. Adding the zone with the same €149 rate restores the previous behaviour.
+- General Standard upper bound is €499.00 (gap to €500); custom uses €499.99.
